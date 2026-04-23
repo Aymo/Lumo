@@ -1,0 +1,43 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Build artifacts
+*.bin
+*.elf
+*.map
+*.hex
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Secrets
+secrets.h
+wifi_credentials.h
+
+# Personal working files
+deskmi-roboeyes-status.md
+tasks.md
+notes.md
+TODO.md
+/_private/
+
+# Claude Code
+.claude/
+
+# Personal working files (status reports, task lists)
+*-roboeyes-status.md
+*-status.md
+tasks.md
+notes.md
+TODO.md
