@@ -12,7 +12,7 @@
 
 #include "../i18n.h"
 
-const i18n::LangTable LANG_ES = {
+extern const i18n::LangTable LANG_ES = {
   "ES",
   "Espanol",
   {

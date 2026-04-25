@@ -4,7 +4,7 @@
 
 #include "../i18n.h"
 
-const i18n::LangTable LANG_EN = {
+extern const i18n::LangTable LANG_EN = {
   "EN",
   "English",
   {
