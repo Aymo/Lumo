@@ -1,0 +1,20 @@
+$manifest = @{
+    name = "Lumo"
+    version = "0.1.0"
+    home_assistant_domain = $null
+    funding_url = $null
+    new_install_prompt_erase = $false
+    builds = @(
+        @{
+            chipFamily = "ESP32-S3"
+            parts = @(
+                @{
+                    path = "firmware/lumo-v0.1.0.bin"
+                    offset = 0
+                }
+            )
+        }
+    )
+} | ConvertTo-Json -Depth 5
+
+Set-Content -Path docs\manifest.json -Value $manifest -Encoding UTF8

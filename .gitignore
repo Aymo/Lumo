@@ -12,6 +12,9 @@
 *.map
 *.hex
 
+# But DO include firmware binaries we ship via Pages
+!docs/firmware/*.bin
+
 # OS
 .DS_Store
 Thumbs.db

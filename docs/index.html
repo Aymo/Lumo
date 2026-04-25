@@ -1,10 +1,226 @@
-@"
 <!DOCTYPE html>
-<html>
-<head><title>Lumo</title></head>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumo — Flash in your browser</title>
+  <meta name="description" content="Flash Lumo, an open-source firmware for the Waveshare ESP32-S3 AMOLED display, directly from your browser." />
+
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+
+  <style>
+    :root {
+      --bg: #0e0e10;
+      --surface: #18181b;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --accent: #f97316;
+      --accent-hover: #ea580c;
+      --border: #27272a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    main {
+      flex: 1;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem 2rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin: 0 0 0.5rem;
+      background: linear-gradient(135deg, #f97316, #fbbf24);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 1.1rem;
+      margin: 0 0 3rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+    }
+
+    .flash-section {
+      text-align: center;
+      padding: 2.5rem 2rem;
+    }
+
+    esp-web-install-button {
+      --esp-tools-button-color: white;
+      --esp-tools-button-text-color: var(--bg);
+      --esp-tools-button-border-radius: 8px;
+    }
+
+    esp-web-install-button::part(button) {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.9rem 2rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    esp-web-install-button::part(button):hover {
+      background: var(--accent-hover);
+    }
+
+    ol, ul {
+      padding-left: 1.5rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+    }
+
+    code {
+      background: var(--bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .browser-warning {
+      display: none;
+      background: #422006;
+      border: 1px solid #92400e;
+      color: #fed7aa;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+
+    .browser-warning.show {
+      display: block;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem 1.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+
+    footer a { color: var(--muted); }
+  </style>
+</head>
 <body>
-<h1>Lumo - Coming soon</h1>
-<p>The web flasher will live here.</p>
+  <main>
+    <h1>Lumo</h1>
+    <p class="tagline">Lightweight Universal Moji OS — flash it to your board in 30 seconds.</p>
+
+    <div class="browser-warning" id="browser-warning">
+      ⚠️ Your browser doesn't support Web Serial. Please use <strong>Chrome</strong>, <strong>Edge</strong>, or <strong>Opera</strong> on a desktop computer.
+    </div>
+
+    <div class="card flash-section">
+      <h2 style="margin-top:0">Install Lumo</h2>
+      <p style="color: var(--muted); margin-bottom: 2rem;">
+        Connect your Waveshare ESP32-S3-Touch-AMOLED-1.75 via USB and click below.
+      </p>
+
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="unsupported">
+          Browser not supported — use Chrome or Edge
+        </button>
+        <button slot="not-allowed">
+          Web Serial not allowed on this page
+        </button>
+      </esp-web-install-button>
+
+      <p style="margin-top: 2rem; color: var(--muted); font-size: 0.9rem;">
+        Version 0.1.0 · <a href="https://github.com/Aymo/Lumo/releases">All releases</a>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Before you start</h2>
+      <ul>
+        <li>You'll need a <a href="https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm">Waveshare ESP32-S3-Touch-AMOLED-1.75</a> board.</li>
+        <li>Use a USB-C cable that supports data (not just charging).</li>
+        <li>Use Chrome, Edge, or Opera on a desktop. Firefox and Safari don't support Web Serial.</li>
+        <li>Close any other program that might be using the serial port (Arduino IDE, PlatformIO monitor, etc.).</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>How it works</h2>
+      <ol>
+        <li>Plug your board into your computer.</li>
+        <li>Click the <strong>Install Lumo</strong> button above.</li>
+        <li>Select your board's serial port from the popup.</li>
+        <li>Click <strong>Install</strong> in the dialog and wait. The board will reboot when finished.</li>
+      </ol>
+      <p style="color: var(--muted); margin-bottom: 0;">
+        After flashing, your board will show Lumo's eyes. Tap the screen for emotions, swipe left for the menu.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Trouble?</h2>
+      <ul>
+        <li><strong>No port shown?</strong> Try a different USB cable, or hold the BOOT button while connecting.</li>
+        <li><strong>"Failed to connect"?</strong> Press and hold BOOT, click Install, release BOOT after 1 second.</li>
+        <li><strong>Still stuck?</strong> Open an <a href="https://github.com/Aymo/Lumo/issues">issue on GitHub</a>.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/Aymo/Lumo">GitHub</a> ·
+      <a href="https://github.com/Aymo/Lumo/blob/main/LICENSE">GPL-3.0</a> ·
+      <a href="https://github.com/Aymo/Lumo/discussions">Discussions</a>
+    </p>
+    <p style="margin-top: 0.5rem;">
+      Lumo is an independent open-source project, not affiliated with any commercial product.
+    </p>
+  </footer>
+
+  <script>
+    // Show browser warning if Web Serial is not supported
+    if (!('serial' in navigator)) {
+      document.getElementById('browser-warning').classList.add('show');
+    }
+  </script>
 </body>
 </html>
-"@ | Set-Content -Path docs\index.html -Encoding UTF8
