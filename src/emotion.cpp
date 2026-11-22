@@ -30,6 +30,8 @@ const char* emotionName(Emotion e) {
     case Emotion::SLEEPY:    return "SLEEPY";
     case Emotion::SCARED:    return "SCARED";
     case Emotion::LOVE:      return "LOVE";
+    case Emotion::ASLEEP:    return "ASLEEP";
+    case Emotion::DIZZY:     return "DIZZY";
   }
   return "?";
 }
@@ -100,6 +102,21 @@ EyeParams presetFor(Emotion e) {
       p.openness_top = 1.0f;
       p.openness_bot = 1.0f;
       p.heart_shape  = true;
+      break;
+
+    case Emotion::ASLEEP:
+      // Night: lids almost shut, a thin sliver low in the eye.
+      p.openness_top = 0.10f;
+      p.openness_bot = 0.96f;
+      p.vertical_off = 12;
+      break;
+
+    case Emotion::DIZZY:
+      // Woozy: smaller, half-lidded eyes (the circling comes from tickDizzyEyes).
+      p.radius_x     = 40;
+      p.radius_y     = 52;
+      p.openness_top = 0.62f;
+      p.openness_bot = 0.85f;
       break;
   }
   return p;

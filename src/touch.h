@@ -10,6 +10,7 @@ enum class TouchEvent : uint8_t {
   SWIPE_RIGHT,
   SWIPE_UP,
   SWIPE_DOWN,
+  LONG_PRESS,   // finger held still ~0.7 s (fires while still touching)
 };
 
 // Ruwe touch-positie, voor gebruik in UI-schermen die op tap-locatie reageren.
@@ -57,6 +58,7 @@ class Touch {
 
   bool       _prev_touched  = false;
   uint32_t   _down_ms       = 0;
+  bool       _long_fired    = false;
   uint32_t   _last_down_ms  = 0;
   int16_t    _down_x        = 0;
   int16_t    _down_y        = 0;

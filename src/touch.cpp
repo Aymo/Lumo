@@ -14,6 +14,8 @@ constexpr uint8_t  TOUCH_I2C_ADDR = 0x5A;
 // Tap-criteria: tik = kort indrukken, korte tijd, weinig beweging.
 constexpr uint32_t MAX_TAP_DURATION_MS  = 250;
 constexpr int16_t  MAX_TAP_DRIFT_PX     = 20;
+constexpr uint32_t LONG_PRESS_MS        = 700;
+constexpr int16_t  LONG_PRESS_DRIFT_PX  = 25;
 
 // Swipe-criteria: duidelijke richting, voldoende afstand, niet te traag.
 constexpr int16_t  MIN_SWIPE_PX         = 80;
@@ -49,10 +51,13 @@ bool Touch::begin() {
 // huidige canvas-rotatie. Spiegels Arduino_GFX' interne rotatie-mapping.
 static void applyRotation(int16_t& x, int16_t& y, uint8_t rotation) {
   const int16_t rx = x, ry = y;
+  // The CST9217's raw frame is the panel rotated 180 deg (Waveshare's own demos call
+  // setMirrorXY(true, true)). Combined with Arduino_Canvas' rotation mapping that makes
+  // rotation 0 a 180-deg flip and rotation 2 the identity; 1 and 3 were already right.
   switch (rotation & 3) {
-    case 0: /* identiteit */                  break;
+    case 0: x = LCD_WIDTH  - 1 - rx; y = LCD_HEIGHT - 1 - ry; break;
     case 1: x = LCD_HEIGHT - 1 - ry; y = rx;  break;
-    case 2: x = LCD_WIDTH  - 1 - rx; y = LCD_HEIGHT - 1 - ry; break;
+    case 2: /* identity */                    break;
     case 3: x = ry;                  y = LCD_WIDTH  - 1 - rx; break;
   }
 }
@@ -67,6 +72,7 @@ void Touch::tick(uint32_t now_ms) {
 
   // Down-edge.
   if (touched && !_prev_touched) {
+    _long_fired   = false;
     _down_ms      = now_ms;
     _last_down_ms = now_ms;
     _down_x       = xs[0];
@@ -81,8 +87,21 @@ void Touch::tick(uint32_t now_ms) {
     _last_y = ys[0];
   }
 
+  // Long press: held still long enough. Fires once while the finger is down; the
+  // release afterwards is then not counted as a tap or swipe.
+  if (touched && !_long_fired && now_ms - _down_ms >= LONG_PRESS_MS) {
+    const int16_t ddx = _last_x - _down_x, ddy = _last_y - _down_y;
+    if (abs(ddx) <= LONG_PRESS_DRIFT_PX && abs(ddy) <= LONG_PRESS_DRIFT_PX) {
+      _pending_event = TouchEvent::LONG_PRESS;
+      _long_fired    = true;
+      _tap_state     = TapState::IDLE;
+    }
+  }
+
   // Up-edge: beoordeel of het een tap of swipe was.
-  if (!touched && _prev_touched) {
+  if (!touched && _prev_touched && _long_fired) {
+    _long_fired = false;               // swallow the release after a long press
+  } else if (!touched && _prev_touched) {
     const uint32_t dur = now_ms - _down_ms;
     const int16_t  dx  = _last_x - _down_x;
     const int16_t  dy  = _last_y - _down_y;
