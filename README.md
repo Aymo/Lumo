@@ -11,6 +11,45 @@
 
 ---
 
+## 🧑‍🚀 About this fork (`astronaut-mods` branch)
+
+This fork adds changes made while building Lumo into a 3D-printed astronaut figure whose helmet visor is the display. Everything below is on the **`astronaut-mods`** branch; `main` tracks upstream.
+
+**Fixes**
+- Touch points now line up with what's drawn after changing the screen orientation
+- Blinking actually shows (timestamp wraparound bug)
+- On battery, the board no longer deep-sleeps right after a touch (same wraparound bug)
+
+**More life**
+- Auto-blink every 3–6 s with an occasional double blink, wider eye movement, idle glances
+- Random happy / surprised / love moods every 15–45 s
+- **Tilt to look:** the eyes look toward the way you tilt him
+- **Shake:** dizzy, with circling eyes
+- **Night mode:** sleepy at 22:00, asleep and dimmed at 23:00, wakes at 06:45 (needs the clock set)
+- Apollo-style Quindar beeps every 4–10 minutes (needs a speaker)
+
+**Gestures**
+
+| Touch | Reaction |
+| --- | --- |
+| Tap | Happy |
+| Double tap | Clock for 4 s |
+| Three double taps (6 quick taps) | Angry |
+| Long press (~0.7 s) | Heart eyes |
+| Swipe left or right | Menu / back |
+
+The time screen's + / − buttons are larger, sit further from the edge, and repeat when held.
+
+**Flashing this fork.** The web flasher installs upstream Lumo, not this branch. Build with PlatformIO (`pio run -e lumo`), then flash the app image with esptool. On this board, `--after watchdog-reset` is needed for it to restart after flashing:
+
+```bash
+python -m esptool --chip esp32s3 --port COM3 --baud 460800 --after watchdog-reset write-flash 0x10000 .pio/build/lumo/firmware.bin
+```
+
+Tilt-to-look assumes the board stands upright with USB at the top. If your enclosure mounts it differently, adjust `PITCH_REST` and `TILT_SIGN_X` in `src/main.cpp`.
+
+---
+
 ## What is Lumo?
 
 Lumo is a configurable **expressive-eyes firmware** for round AMOLED displays on ESP32-S3 hardware. It's a tiny face engine: animated eyes that blink, look around, react to touch and motion, and express emotions through shape, color, and movement.

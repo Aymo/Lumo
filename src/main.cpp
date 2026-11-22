@@ -41,8 +41,8 @@ static constexpr uint32_t SLEEP_TIMEOUT_MS      = 5 * 60 * 1000;   // 5 min
 static uint32_t g_last_interaction_ms = 0;
 
 // Tap-spam detectie: 4 interacties binnen 1.5 sec = boos.
-static constexpr uint8_t  TAP_SPAM_THRESHOLD    = 4;
-static constexpr uint32_t TAP_SPAM_WINDOW_MS    = 1500;
+static constexpr uint8_t  TAP_SPAM_THRESHOLD    = 6;    // e.g. three double-taps
+static constexpr uint32_t TAP_SPAM_WINDOW_MS    = 2500;   // max gap between taps in a streak
 
 static Arduino_DataBus* bus = new Arduino_ESP32QSPI(
     LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -115,6 +115,8 @@ static bool pointInButton(const TouchPoint& p, const MenuButton& b) {
 // --- Emotion timeouts -----------------------------------------------------
 
 static uint32_t g_emotion_until = 0;
+static constexpr uint32_t CLOCK_SHOW_MS = 4000;   // double-tap clock
+static uint32_t g_clock_until = 0;
 
 // Forward declaration (definitie staat verderop in het bestand).
 static void drawCenteredText(const char* text, int16_t cy, uint8_t text_size, uint16_t color);
@@ -652,7 +654,7 @@ static void handleEyesInput(TouchEvent te) {
   // IMU pickup wordt apart afgehandeld (buiten deze functie) en blijft werken.
   if (emotions.current() == Emotion::ANGRY) return;
 
-  if (te == TouchEvent::SWIPE_LEFT) {
+  if (te == TouchEvent::SWIPE_LEFT || te == TouchEvent::SWIPE_RIGHT) {   // either way opens the menu
     g_mode = AppMode::MENU;
     return;
   }
@@ -662,23 +664,31 @@ static void handleEyesInput(TouchEvent te) {
     const uint8_t weight = (te == TouchEvent::DOUBLE_TAP) ? 2 : 1;
     if (registerTapAndCheckSpam(weight)) {
       Serial.println(">>> ANGRY (te veel tikken)");
+      g_clock_until = 0;     // don't hide the anger behind the clock
       triggerEmotion(Emotion::ANGRY, ANGRY_DURATION_MS, 1.0f);
       eyes.shake(4, 2500);   // subtiele tril van irritatie
       return;
     }
   }
 
+  if (te == TouchEvent::LONG_PRESS) {
+    Serial.println(">>> LOVE (petted)");
+    g_clock_until = 0;
+    triggerEmotion(Emotion::LOVE, LOVE_DURATION_MS + 1000, 0.3f);
+    return;
+  }
   if (te == TouchEvent::SINGLE_TAP) {
     Serial.println(">>> HAPPY (tap)");
     triggerEmotion(Emotion::HAPPY, HAPPY_DURATION_MS, 0.12f);
   } else if (te == TouchEvent::DOUBLE_TAP) {
-    Serial.println(">>> SURPRISED (double tap)");
-    triggerEmotion(Emotion::SURPRISED, SURPRISED_DURATION_MS, 1.0f);
+    Serial.println(">>> CLOCK (double tap)");
+    g_clock_until = millis() + CLOCK_SHOW_MS;
+    noteInteraction();
   }
 }
 
 static void handleMenuInput(TouchEvent te) {
-  if (te == TouchEvent::SWIPE_RIGHT) {
+  if (te == TouchEvent::SWIPE_RIGHT || te == TouchEvent::SWIPE_LEFT) {
     g_mode = AppMode::EYES;
     return;
   }
@@ -696,7 +706,7 @@ static void handleMenuInput(TouchEvent te) {
 }
 
 static void handleSettingsMenuInput(TouchEvent te) {
-  if (te == TouchEvent::SWIPE_RIGHT) {
+  if (te == TouchEvent::SWIPE_RIGHT || te == TouchEvent::SWIPE_LEFT) {
     g_mode = AppMode::MENU;
     return;
   }
@@ -783,10 +793,12 @@ static void bumpCurrentField(int delta) {
 }
 
 struct Rect { int16_t x, y, w, h; };
-static constexpr Rect FIELD_LEFT_ARROW  = { 70,  170, 60, 60 };
-static constexpr Rect FIELD_RIGHT_ARROW = { 336, 170, 60, 60 };
-static constexpr Rect MINUS_BUTTON      = { 70,  320, 90, 90 };
+static constexpr Rect FIELD_LEFT_ARROW  = { 60,  160, 80, 80 };
+static constexpr Rect FIELD_RIGHT_ARROW = { 326, 160, 80, 80 };
+static constexpr Rect MINUS_BUTTON      = { 70,  320, 90, 90 };   // (legacy, unused for hit-testing)
 static constexpr Rect PLUS_BUTTON       = { 306, 320, 90, 90 };
+// v-fix: +/- moved in from the round edge, drawn bigger, generous round hit areas.
+static constexpr int16_t TB_MINUS_X = 158, TB_PLUS_X = 308, TB_Y = 345, TB_R = 50, TB_HIT_R = 66;
 
 static bool pointInRect(const TouchPoint& p, const Rect& r) {
   return p.valid && p.x >= r.x && p.x <= r.x + r.w &&
@@ -832,23 +844,56 @@ static void renderTimeScreen() {
     default: break;
   }
   snprintf(val, sizeof(val), "%0*d", width, value);
-  drawCenteredText(val, 265, 6, 0xFFFF);
+  drawCenteredText(val, 260, 6, 0xFFFF);
 
-  // Minus-knop (grijs)
-  gfx->fillCircle(MINUS_BUTTON.x + MINUS_BUTTON.w/2,
-                  MINUS_BUTTON.y + MINUS_BUTTON.h/2, 40, 0x7BEF);
-  gfx->fillRect(MINUS_BUTTON.x + 20, MINUS_BUTTON.y + 40,
-                MINUS_BUTTON.w - 40, 10, 0xFFFF);
-
-  // Plus-knop (groen)
-  gfx->fillCircle(PLUS_BUTTON.x + PLUS_BUTTON.w/2,
-                  PLUS_BUTTON.y + PLUS_BUTTON.h/2, 40, 0x07E0);
-  gfx->fillRect(PLUS_BUTTON.x + 20, PLUS_BUTTON.y + 40,
-                PLUS_BUTTON.w - 40, 10, 0xFFFF);
-  gfx->fillRect(PLUS_BUTTON.x + 40, PLUS_BUTTON.y + 20,
-                10, PLUS_BUTTON.h - 40, 0xFFFF);
+  // Minus (grey) and plus (green): bigger and further from the round edge.
+  gfx->fillCircle(TB_MINUS_X, TB_Y, TB_R, 0x7BEF);
+  gfx->fillRect(TB_MINUS_X - 26, TB_Y - 6, 52, 12, 0xFFFF);
+  gfx->fillCircle(TB_PLUS_X, TB_Y, TB_R, 0x07E0);
+  gfx->fillRect(TB_PLUS_X - 26, TB_Y - 6, 52, 12, 0xFFFF);
+  gfx->fillRect(TB_PLUS_X - 6, TB_Y - 26, 12, 52, 0xFFFF);
 
   drawCenteredText(i18n::t(i18n::T::HINT_SWIPE_SAVE), 435, 2, 0x8410);
+}
+
+static bool inCircle(int16_t x, int16_t y, int16_t cx, int16_t cy, int16_t r) {
+  const int32_t dx = x - cx, dy = y - cy;
+  return dx * dx + dy * dy <= (int32_t)r * r;
+}
+// 0 none, 1 minus, 2 plus, 3 prev field, 4 next field
+static int timeButtonAt(int16_t x, int16_t y) {
+  if (inCircle(x, y, TB_MINUS_X, TB_Y, TB_HIT_R)) return 1;
+  if (inCircle(x, y, TB_PLUS_X,  TB_Y, TB_HIT_R)) return 2;
+  TouchPoint p{x, y, true};
+  if (pointInRect(p, FIELD_LEFT_ARROW))  return 3;
+  if (pointInRect(p, FIELD_RIGHT_ARROW)) return 4;
+  return 0;
+}
+static void doTimeButton(int b) {
+  switch (b) {
+    case 1: bumpCurrentField(-1); break;
+    case 2: bumpCurrentField(+1); break;
+    case 3: g_edit_field = (uint8_t)((g_edit_field + FIELD_COUNT - 1) % FIELD_COUNT); break;
+    case 4: g_edit_field = (uint8_t)((g_edit_field + 1) % FIELD_COUNT); break;
+  }
+}
+// Acts the moment a finger lands on a button (no waiting for tap confirmation);
+// holding + or - repeats.
+static void handleTimePress(uint32_t now) {
+  static bool down = false;
+  static int  action = 0;
+  static uint32_t next_rep = 0;
+  if (touch.isTouched()) {
+    const int b = timeButtonAt(touch.touchX(), touch.touchY());
+    if (!down) {
+      down = true; action = b;
+      if (b) { doTimeButton(b); next_rep = now + 550; }
+    } else if ((action == 1 || action == 2) && b == action && now >= next_rep) {
+      doTimeButton(action); next_rep = now + 130;
+    }
+  } else {
+    down = false; action = 0;
+  }
 }
 
 static bool handleTimeTap(const TouchPoint& p) {
@@ -872,7 +917,7 @@ static void handleSubscreenInput(TouchEvent te) {
   // Swipe-rechts gaat altijd een niveau omhoog. TIME + LANGUAGE zitten onder
   // SETTINGS; andere subschermen hangen direct onder het hoofdmenu.
   // Bij TIME schrijven we de nieuwe tijd ook nog naar de RTC.
-  if (te == TouchEvent::SWIPE_RIGHT) {
+  if (te == TouchEvent::SWIPE_RIGHT || te == TouchEvent::SWIPE_LEFT) {
     if (g_mode == AppMode::TIME) clock_rtc.saveSystemTimeToRtc();
     const bool under_settings = (g_mode == AppMode::TIME ||
                                  g_mode == AppMode::LANGUAGE ||
@@ -909,10 +954,8 @@ static void handleSubscreenInput(TouchEvent te) {
       return;
     }
     if (g_mode == AppMode::TIME) {
-      // Alleen terug naar Instellingen als we NIET op een tijd-setter knop klikten.
-      if (!handleTimeTap(touch.lastTapPoint())) {
-        g_mode = AppMode::SETTINGS;
-      }
+      // Buttons act on press (handleTimePress); a stray tap no longer exits.
+      // Leave with a swipe (which also saves the time).
       return;
     }
     if (g_mode == AppMode::LANGUAGE) {
@@ -967,6 +1010,7 @@ void setup() {
   emotions.setEmotion(Emotion::NEUTRAL, 0.12f);
 
   if (!imu.begin())        Serial.println("doorgaan zonder IMU");
+  imu.setPickupThreshold(0.65f);   // was 0.20 g: every nudge (and every tilt) made him scream
   if (!touch.begin())      Serial.println("doorgaan zonder touch");
   else                     touch.setRotation(settings.orientation());
   if (!audio.begin())      Serial.println("doorgaan zonder audio");
@@ -1052,30 +1096,213 @@ static void tickPowerEvents(uint32_t now) {
 // Idle-animatie: soms kijken de ogen random naar links/rechts/boven/onder
 // zolang we in EYES-mode zijn en de emotie NEUTRAL is. Geeft leven aan de
 // idle-staat, zoals bij een mens.
+// ===== Night mode =====================================================
+// Uses the RTC time (set it in Settings > Time). Ignored until the clock is set.
+static constexpr int NIGHT_SLEEPY_HOUR = 22;   // 22:00 heavy-lidded
+static constexpr int NIGHT_ASLEEP_HOUR = 23;   // 23:00 eyes closed, screen dimmed
+static constexpr int MORNING_WAKE_HOUR = 6;    // 06:45 wake-up stretch
+static constexpr int MORNING_WAKE_MIN  = 45;
+static constexpr uint8_t BRIGHT_DAY   = 180;
+static constexpr uint8_t BRIGHT_NIGHT = 40;
+enum class NightState : uint8_t { AWAKE, SLEEPY, ASLEEP };
+static NightState g_night = NightState::AWAKE;
+
+static NightState nightStateFor(const struct tm& t) {
+  const int m = t.tm_hour * 60 + t.tm_min;
+  const int wake = MORNING_WAKE_HOUR * 60 + MORNING_WAKE_MIN;
+  if (m >= NIGHT_ASLEEP_HOUR * 60 || m < wake) return NightState::ASLEEP;
+  if (m >= NIGHT_SLEEPY_HOUR * 60)             return NightState::SLEEPY;
+  return NightState::AWAKE;
+}
+
+// What he settles back to when nothing else is going on.
+static Emotion idleEmotion() {
+  if (g_night == NightState::ASLEEP) return Emotion::ASLEEP;
+  if (g_night == NightState::SLEEPY || g_battery_low) return Emotion::SLEEPY;
+  return Emotion::NEUTRAL;
+}
+
+static void tickNight(uint32_t now) {
+  static uint32_t next_check = 0;
+  static uint8_t  cur_bright = BRIGHT_DAY;
+  if (now >= next_check) {
+    next_check = now + 20000;
+    time_t tt = time(nullptr);
+    struct tm t; localtime_r(&tt, &t);
+    NightState ns = (t.tm_year + 1900 >= 2025) ? nightStateFor(t) : NightState::AWAKE;
+    if (ns != g_night) {
+      Serial.printf("[night] %d -> %d at %02d:%02d\n", (int)g_night, (int)ns, t.tm_hour, t.tm_min);
+      const bool waking = (g_night == NightState::ASLEEP && ns == NightState::AWAKE);
+      g_night = ns;
+      if (waking && g_mode == AppMode::EYES) {     // good-morning stretch + beep
+        triggerEmotion(Emotion::SURPRISED, 1500, 0.3f);
+        audio.playQuindar(false);
+      }
+    }
+  }
+  // Dim only while actually showing the closed eyes; a tap brightens him up.
+  const uint8_t want = (g_mode == AppMode::EYES && emotions.current() == Emotion::ASLEEP)
+                       ? BRIGHT_NIGHT : BRIGHT_DAY;
+  if (want != cur_bright) { panel->setBrightness(want); cur_bright = want; }
+}
+
+// ===== Tilt to look =====================================================
+// The eyes slide toward whichever way he's tipped, relative to how he normally
+// sits (a slow-moving baseline, so he re-centres if left tilted). If they go the
+// wrong way, flip the sign constant.
+static constexpr float TILT_SIGN_X     = -1.0f;   // from the serial log: tipping right gives ax < 0
+static constexpr float TILT_SIGN_Y     = 1.0f;
+static constexpr float TILT_GAIN_X     = 2.6f;    // sin(roll) -> look_x
+static constexpr float TILT_GAIN_Y     = 2.6f;    // change in g along the screen normal -> look_y
+static constexpr float TILT_DEADZONE   = 0.10f;   // ~6 deg
+
+static bool g_tilting = false;
+static uint32_t g_dizzy_until = 0;   // set by the shake detector (below)
+static bool tickTiltLook(uint32_t now, bool apply) {
+  // Fixed reference instead of a learned one: when he stands upright, gravity
+  // points along the board's -Y axis with a slight backward lean (from the serial
+  // log: a = (-0.05, -0.95, -0.19)). A learned baseline went wrong whenever he
+  // booted lying down.
+  static constexpr float PITCH_REST = -0.19f;
+  const MotionSample& s = imu.lastSample();
+  if (s.timestamp_ms == 0 || !apply) return false;
+  const float inplane = sqrtf(s.ax * s.ax + s.ay * s.ay);
+  if (inplane < 0.5f) return false;                       // lying on his back/front
+  float roll = atan2f(s.ay, s.ax) + HALF_PI;              // 0 when upright
+  while (roll >  PI) roll -= TWO_PI;
+  while (roll < -PI) roll += TWO_PI;
+  const float pitch = s.az - PITCH_REST;
+  if (fabsf(roll) < TILT_DEADZONE && fabsf(pitch) < 0.15f) return false;
+  static uint32_t next_dbg = 0;                           // debug: py -m serial.tools.miniterm COM3 115200
+  if (now >= next_dbg) {
+    next_dbg = now + 1000;
+    Serial.printf("[tilt] roll=%.0fdeg pitch=%.2f\n", roll * 57.3f, pitch);
+  }
+  float lx = TILT_SIGN_X * sinf(roll) * TILT_GAIN_X;
+  float ly = TILT_SIGN_Y * pitch * TILT_GAIN_Y;
+  lx = constrain(lx, -1.0f, 1.0f);
+  ly = constrain(ly, -0.8f, 0.8f);
+  eyes.setLookTarget(lx, ly);
+  return true;
+}
+
+// ===== Random NASA beeps ================================================
+static constexpr uint32_t BEEP_MIN_GAP_MS = 4UL * 60 * 1000;
+static constexpr uint32_t BEEP_MAX_GAP_MS = 10UL * 60 * 1000;
+static void tickRandomBeep(uint32_t now) {
+  static uint32_t next_beep = 0;
+  if (next_beep == 0) next_beep = now + 90000;   // first one ~1.5 min after boot
+  if (now < next_beep) return;
+  if (g_mode != AppMode::EYES || emotions.current() != Emotion::NEUTRAL ||
+      g_night != NightState::AWAKE || audio.busy()) return;
+  audio.playQuindar((esp_random() % 2) == 0);
+  eyes.setLookTarget(-0.4f, -0.6f);              // glance up as if listening to Houston
+  next_beep = now + BEEP_MIN_GAP_MS + (esp_random() % (BEEP_MAX_GAP_MS - BEEP_MIN_GAP_MS + 1));
+  Serial.println("[beep] quindar");
+}
+
+// ===== Shake -> dizzy ===================================================
+// Several hard jolts within a short window = shaking. Eyes roll in circles that
+// slow down, then he settles.
+static constexpr float    SHAKE_JOLT_G      = 0.5f;   // |accel| deviating this much from 1 g
+static constexpr uint8_t  SHAKE_JOLTS       = 4;      // ...this many samples
+static constexpr uint32_t SHAKE_WINDOW_MS   = 1200;    // ...within this window
+static constexpr uint32_t DIZZY_MS          = 3000;
+static void tickShake(uint32_t now) {
+  static uint32_t last_ts = 0, win_start = 0, cooldown = 0;
+  static uint8_t  jolts = 0;
+  const MotionSample& s = imu.lastSample();
+  if (s.timestamp_ms == last_ts) return;
+  last_ts = s.timestamp_ms;
+  if (now - win_start > SHAKE_WINDOW_MS) { win_start = now; jolts = 0; }
+  if (fabsf(s.magnitude - 1.0f) > SHAKE_JOLT_G) jolts++;
+  if (jolts >= SHAKE_JOLTS && now >= cooldown) {
+    jolts = 0; cooldown = now + DIZZY_MS + 2000;
+    Serial.println(">>> DIZZY (shake)");
+    g_mode = AppMode::EYES;
+    g_dizzy_until = now + DIZZY_MS;
+    triggerEmotion(Emotion::DIZZY, DIZZY_MS + 600, 0.4f);
+  }
+}
+static void tickDizzyEyes(uint32_t now) {
+  if (now >= g_dizzy_until) return;
+  const float left = (float)(g_dizzy_until - now) / DIZZY_MS;      // 1 -> 0
+  static float phase = 0; static uint32_t last = 0;
+  const float dt = last ? (now - last) / 1000.0f : 0.0f; last = now;
+  phase += dt * (4.0f + 10.0f * left);                              // spins slower as it wears off
+  const float r = 0.35f + 0.55f * left;
+  eyes.setLookTarget(r * cosf(phase), 0.7f * r * sinf(phase));
+  if (now + 40 >= g_dizzy_until) eyes.setLookTarget(0, 0);
+}
+
+// ===== Double-tap clock ================================================
+static void renderClockFace() {
+  gfx->fillScreen(0x0000);
+  time_t tt = time(nullptr);
+  struct tm t; localtime_r(&tt, &t);
+  const uint16_t col = getGlobalEyeColor();
+  char buf[16];
+  if (t.tm_year + 1900 < 2025) {
+    drawCenteredText("--:--", LCD_HEIGHT / 2 - 10, 8, col);
+    drawCenteredText("Set time in Settings", LCD_HEIGHT / 2 + 70, 2, 0x8410);
+  } else {
+    int h = t.tm_hour % 12; if (h == 0) h = 12;
+    snprintf(buf, sizeof(buf), "%d:%02d", h, t.tm_min);
+    drawCenteredText(buf, LCD_HEIGHT / 2 - 10, 9, col);
+    static const char* DAYS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+    static const char* MONS[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+    snprintf(buf, sizeof(buf), "%s %s %d", DAYS[t.tm_wday], MONS[t.tm_mon], t.tm_mday);
+    drawCenteredText(buf, LCD_HEIGHT / 2 + 75, 3, 0xC618);
+    drawCenteredText(t.tm_hour < 12 ? "AM" : "PM", LCD_HEIGHT / 2 - 105, 3, 0x8410);
+  }
+}
+
+// Spontaneous expressions: every so often, while idle and NEUTRAL, show a short
+// random mood. Deliberately does NOT count as user interaction, so the battery
+// sleep timeout still works.
+static constexpr uint32_t MOOD_MIN_GAP_MS = 15000;
+static constexpr uint32_t MOOD_MAX_GAP_MS = 45000;
+static void tickSpontaneousMood(uint32_t now) {
+  static uint32_t next_mood_ms = 0;
+  if (next_mood_ms == 0) next_mood_ms = now + 8000;   // first one soon after boot
+  if (g_mode != AppMode::EYES || emotions.current() != Emotion::NEUTRAL) return;
+  if (now < next_mood_ms) return;
+  const uint32_t roll = esp_random() % 100;
+  Emotion e; uint32_t dur; float rate;
+  if      (roll < 55) { e = Emotion::HAPPY;     dur = 1800 + esp_random() % 1200; rate = 0.15f; }
+  else if (roll < 85) { e = Emotion::SURPRISED; dur = 1200 + esp_random() % 800;  rate = 0.6f;  }
+  else                { e = Emotion::LOVE;      dur = 1500 + esp_random() % 800;  rate = 0.4f;  }
+  emotions.setEmotion(e, rate);
+  g_emotion_until = now + dur;
+  Serial.printf("[mood] %s for %lu ms\n", emotionName(e), (unsigned long)dur);
+  next_mood_ms = now + MOOD_MIN_GAP_MS + (esp_random() % (MOOD_MAX_GAP_MS - MOOD_MIN_GAP_MS + 1));
+}
+
 static void tickIdleLook(uint32_t now) {
   if (g_mode != AppMode::EYES) return;
   if (emotions.current() != Emotion::NEUTRAL) return;
 
   static uint32_t next_look_change_ms = 0;
+  if (g_tilting) { next_look_change_ms = now + 1200; return; }
   if (now < next_look_change_ms) return;
 
   // ~40% kans: keer terug naar midden. Anders: random punt.
   const uint32_t roll = esp_random() % 100;
-  if (roll < 40) {
+  if (roll < 30) {
     eyes.setLookTarget(0.0f, 0.0f);
   } else {
     // look_x in [-0.7, 0.7], look_y in [-0.3, 0.3] (horizontaal meer dan verticaal).
-    const float lx = ((float)((int)(esp_random() % 1401) - 700)) / 1000.0f;
+    const float lx = ((float)((int)(esp_random() % 1201) - 600)) / 1000.0f;   // +-0.6 of the 80 px range
     const float ly = ((float)((int)(esp_random() %  601) - 300)) / 1000.0f;
     eyes.setLookTarget(lx, ly);
   }
   // Mensen knipperen vaak tijdens een saccade -- 60% kans dat look-change
   // samengaat met een blink, zodat beweging en knipperen door elkaar lopen.
-  if ((esp_random() % 100) < 60) {
+  if ((esp_random() % 100) < 30) {   // was 60%
     eyes.blink();
   }
   // Volgend moment: 1.5 - 5 sec.
-  next_look_change_ms = now + 1500 + (esp_random() % 3501);
+  next_look_change_ms = now + 800 + (esp_random() % 2201);   // was 1.5-5 s, now 0.8-3 s
 }
 
 void loop() {
@@ -1084,7 +1311,20 @@ void loop() {
   imu.tick(now);
   touch.tick(now);
   tickPowerEvents(now);
+  tickNight(now);
+  tickShake(now);
+  {
+    const Emotion ce = emotions.current();
+    const bool allow_tilt = g_mode == AppMode::EYES && now >= g_dizzy_until &&
+                            ce != Emotion::ASLEEP && ce != Emotion::LOVE;
+    const bool was = g_tilting;
+    g_tilting = tickTiltLook(now, allow_tilt);
+    if (was && !g_tilting) eyes.setLookTarget(0.0f, 0.0f);   // re-centre when levelled
+  }
+  tickDizzyEyes(now);
   tickIdleLook(now);
+  tickSpontaneousMood(now);
+  tickRandomBeep(now);
   settings.tick(now);
 
   // Interactie-activiteit detecteren voor het deep-sleep timeout.
@@ -1096,8 +1336,11 @@ void loop() {
   // Deep sleep als er geen USB is, de accu-stand goedwerkend + lang genoeg idle.
   const PowerStatus ps = power_mgr.read();
   const bool on_battery = ps.valid && !ps.vbus_present && !ps.is_charging;
+  // Signed difference: noteInteraction() stamps millis(), which can be a few ms past
+  // this loop's 'now'. The unsigned subtraction then wrapped to ~49 days and any
+  // touch on battery could send him straight to sleep.
   if (on_battery && g_mode == AppMode::EYES &&
-      now - g_last_interaction_ms > SLEEP_TIMEOUT_MS) {
+      (int32_t)(now - g_last_interaction_ms) > (int32_t)SLEEP_TIMEOUT_MS) {
     goToDeepSleep();
   }
 
@@ -1136,7 +1379,21 @@ void loop() {
   // Live drag in COLOR-mode: hue updaten terwijl vinger over de ring sleept.
   if (g_mode == AppMode::COLOR) {
     handleColorDrag();
+    // Back gesture that doesn't depend on tap timing: the colour wheel is slow to
+    // draw, so quick taps were often measured as too long and ignored. A touch that
+    // starts in the centre and is released in the centre now always returns.
+    static bool center_down = false;
+    const int16_t cdx = touch.touchX() - COLOR_CX;
+    const int16_t cdy = touch.touchY() - COLOR_CY;
+    const bool in_center = (int32_t)cdx * cdx + (int32_t)cdy * cdy <= (int32_t)CENTER_R * CENTER_R;
+    if (touch.isTouched()) {
+      if (in_center) center_down = true; else center_down = false;
+    } else if (center_down) {
+      center_down = false;
+      g_mode = AppMode::MENU;
+    }
   }
+  if (g_mode == AppMode::TIME) handleTimePress(now);
   // Live drag in VOLUME-mode: volume updaten tijdens slepen op de slider.
   if (g_mode == AppMode::VOLUME) {
     handleVolumeDrag();
@@ -1144,28 +1401,19 @@ void loop() {
 
   // Terug naar idle na emotie-duration. Kies SLEEPY als accu leeg, anders
   // NEUTRAL. SLEEPY zelf triggeren we niet opnieuw want dat is al de idle.
-  if (g_mode == AppMode::EYES &&
-      emotions.current() != Emotion::NEUTRAL &&
-      emotions.current() != Emotion::SLEEPY &&
-      now >= g_emotion_until) {
-    emotions.setEmotion(g_battery_low ? Emotion::SLEEPY : Emotion::NEUTRAL, 0.06f);
-  }
-  // Accu hersteld / opgeladen: wakker worden uit SLEEPY.
-  if (g_mode == AppMode::EYES &&
-      emotions.current() == Emotion::SLEEPY && !g_battery_low) {
-    emotions.setEmotion(Emotion::NEUTRAL, 0.06f);
-  }
-  // Accu leeg terwijl we NEUTRAL zijn: val direct in slaap.
-  if (g_mode == AppMode::EYES &&
-      emotions.current() == Emotion::NEUTRAL && g_battery_low) {
-    emotions.setEmotion(Emotion::SLEEPY, 0.06f);
+  // Settle back to the idle face (neutral / sleepy / asleep) once any triggered
+  // emotion has run its course. Covers low battery and night mode in one place.
+  if (g_mode == AppMode::EYES && now >= g_emotion_until) {
+    const Emotion idle = idleEmotion();
+    if (emotions.current() != idle) emotions.setEmotion(idle, 0.06f);
   }
 
   // Render op basis van mode.
   switch (g_mode) {
     case AppMode::EYES:
       eyes.tick(now);
-      eyes.render();
+      if (now < g_clock_until) renderClockFace();
+      else                     eyes.render();
       break;
     case AppMode::MENU:
       renderMenu();

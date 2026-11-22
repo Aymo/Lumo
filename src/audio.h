@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 // Audio-subsysteem voor Lumo: ES8311 codec + I2S driver.
 // Geluiden worden procedureel gegenereerd (geen WAV files) zodat we geen SD
@@ -14,6 +15,9 @@ class Audio {
   // Plant een "gilletje" in de audio-task. Non-blocking: de render-loop
   // blijft gewoon draaien terwijl het geluidje wordt afgespeeld.
   void playScream();
+  void playPcm(const uint8_t* pcm, size_t len);   // 16 kHz stereo 16-bit
+  void playQuindar(bool with_static);              // NASA-style beep pair
+  bool busy() const;
 
   bool ready() const { return _ready; }
 

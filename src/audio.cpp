@@ -11,6 +11,7 @@ extern "C" {
 
 #include "pin_config.h"
 #include "scream_pcm.h"
+#include "quindar_pcm.h"
 #include "settings.h"
 
 namespace {
@@ -20,6 +21,8 @@ constexpr uint32_t SAMPLE_RATE = 16000;
 I2SClass        i2s;
 TaskHandle_t    scream_task     = nullptr;
 volatile bool   scream_pending  = false;
+const uint8_t* volatile g_play_ptr = nullptr;   // what the task plays next
+volatile size_t g_play_len = 0;
 volatile bool   audio_ready     = false;
 
 // ES8311 handle blijft bewaard na init zodat we later (bijv. vanuit het
@@ -206,7 +209,10 @@ void screamTask(void* /*arg*/) {
     // Speel het embedded PCM-sample in een grote write. i2s.write blokkeert
     // tot de buffer klaar is, dus deze task zit vast totdat de scream voorbij
     // is -- prima, andere cores blijven renderen.
-    i2s.write((uint8_t*)scream_pcm, scream_pcm_len);
+    const uint8_t* ptr = g_play_ptr ? g_play_ptr : scream_pcm;
+    const size_t   len = g_play_ptr ? g_play_len : scream_pcm_len;
+    i2s.write((uint8_t*)ptr, len);
+    g_play_ptr = nullptr;
 
     scream_pending = false;
   }
@@ -235,9 +241,25 @@ bool Audio::begin() {
 
 void Audio::playScream() {
   if (!_ready || scream_pending || !scream_task) return;
+  g_play_ptr = nullptr;
   scream_pending = true;
   xTaskNotifyGive(scream_task);
 }
+
+void Audio::playPcm(const uint8_t* pcm, size_t len) {
+  if (!_ready || scream_pending || !scream_task) return;
+  g_play_len = len;
+  g_play_ptr = pcm;
+  scream_pending = true;
+  xTaskNotifyGive(scream_task);
+}
+
+void Audio::playQuindar(bool with_static) {
+  if (with_static) playPcm(quindar_tx_pcm, quindar_tx_pcm_len);
+  else             playPcm(quindar_pair_pcm, quindar_pair_pcm_len);
+}
+
+bool Audio::busy() const { return scream_pending; }
 
 bool Audio::clapPending() { return _clap_pending; }
 void Audio::consumeClap()  { _clap_pending = false; }

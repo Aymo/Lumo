@@ -12,6 +12,8 @@ enum class Emotion : uint8_t {
   SLEEPY,
   SCARED,
   LOVE,      // hart-ogen, kort getoond bij USB aansluiten
+  ASLEEP,    // night: eyes nearly closed
+  DIZZY,     // after being shaken
 };
 
 const char* emotionName(Emotion e);

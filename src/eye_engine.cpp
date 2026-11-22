@@ -70,7 +70,9 @@ void EyeEngine::setLookTarget(float x, float y) {
 void EyeEngine::scheduleNextAutoBlink(uint32_t now_ms) {
   // Knipper elke 1.5-3.5 sec -- net wat vaker dan menselijk gemiddelde, zodat
   // blinks ook samenvallen met look-bewegingen op verschillende momenten.
-  _next_autoblink_ms = now_ms + 1500 + (esp_random() % 2001);
+  // ~8% of the time follow up with a quick second blink (double-blink).
+  if ((esp_random() % 100) < 8) _next_autoblink_ms = now_ms + 180 + (esp_random() % 200);
+  else                           _next_autoblink_ms = now_ms + 3000 + (esp_random() % 3001);   // was 1.5-3.5 s
 }
 
 void EyeEngine::tick(uint32_t now_ms) {
@@ -92,7 +94,12 @@ void EyeEngine::tick(uint32_t now_ms) {
   // zodat er een smalle horizontale stripe (breedte van het oog) zichtbaar
   // blijft = typisch "oog dicht" cartoon-look.
   if (_blink_active) {
-    uint32_t elapsed = now_ms - _blink_start_ms;
+    // blink() stamps millis(), which can be a few ms LATER than the loop's now_ms.
+    // Unsigned subtraction then wrapped to ~4 billion and every blink ended on its
+    // first frame (invisible). Clamp the signed difference instead.
+    int32_t elapsed_s = (int32_t)(now_ms - _blink_start_ms);
+    if (elapsed_s < 0) elapsed_s = 0;
+    uint32_t elapsed = (uint32_t)elapsed_s;
     if (elapsed >= BLINK_DURATION_MS) {
       _blink_active = false;
       scheduleNextAutoBlink(now_ms);
@@ -231,8 +238,8 @@ void EyeEngine::render() {
 
   // Kijkrichting: beide ogen als geheel verschuiven in de look-richting.
   // Zonder pupillen is dit de beste manier om "kijken naar X" te tonen.
-  const int16_t look_dx = (int16_t)lroundf(_current.look_x * 32.0f);
-  const int16_t look_dy = (int16_t)lroundf(_current.look_y * 20.0f);
+  const int16_t look_dx = (int16_t)lroundf(_current.look_x * 80.0f);   // was 32 originally
+  const int16_t look_dy = (int16_t)lroundf(_current.look_y * 50.0f);   // was 20 originally
 
   const int16_t cx   = _gfx->width()  / 2 + shake_dx + look_dx;
   const int16_t cy   = _gfx->height() / 2 + EYE_BASE_Y_OFFSET
